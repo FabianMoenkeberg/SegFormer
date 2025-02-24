@@ -1,5 +1,6 @@
 # IterativeUnet
 SegFormer is a test project to test the possibilities of transformer segmentation methods.
+It is mainly based on the tutorial from ´https://github.com/NielsRogge/Transformers-Tutorials/blob/master/SegFormer/Fine_tune_SegFormer_on_custom_dataset.ipynb´.
 
 ## Questions
 * How to use them?
@@ -28,7 +29,7 @@ Important steps, some are already done, e.g. tensorflow[and-cuda]==2.17.0
   Set path in `~/.bashrc` :  `LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu`
 * Start Docker `sudo service docker start`
 * Create Docker container from Dockerfile `docker buildx build -t segformer_image .`
-* Run Docker container once `docker run --gpus all -v /mnt/c/Users/fmo/source/NNJIPCenterDetection/NNJIPCenterDetector:/app segformer_image` (not debugging)
+* Run Docker container once `docker run --gpus all --name segFormer -p 2224:24  -it -v /mnt/c/Users/fmo/sourcePrivate/SegFormer:/app segformer_image tail -f /dev/null` (not debugging)
 * Debug Docker container ``*
 * Inside the file [/etc/nvidia-container-runtime/config.toml change no-cgroups from true to false](https://github.com/microsoft/WSL/issues/9962#issuecomment-2066459177)
   
@@ -43,19 +44,19 @@ Important files are
 Note: It is important to use `buildx` not `build`.
 
 ## Start Docker Container and attach VS Code to running container.
-* Build manually docker container in terminal: `docker buildx build -t iterativeunet .`
+* Build manually docker container in terminal: `docker buildx build -t segformer_image .`
 * Start Container in the Container-Field.
 * Right-Click on running container and Attach VS Code to running container.
 * Debug and run scripts with launch-json "Python: Run current File inside Docker".
 
 ## Run it in VS Code manually
-* Build manually docker container in terminal: `docker buildx build -t iterativeunet .`
+* Build manually docker container in terminal: `docker buildx build -t segformer_image .`
 * Comment "Wait for client from debugpy"
-* Run it manually in terminal: `docker run --gpus all -v /mnt/c/Users/fmo/source/NNJIPCenterDetection/NNJIPCenterDetector:/app iterativeunet`
+* Run it manually in terminal: `docker run --gpus all -v /mnt/c/Users/fmo/sourcePrivate/SegFormer:/app segformer_image`
 
 ## Debug it with VS Code
 
-* Build manually docker container in terminal: `docker buildx build -t iterativeunet .`
+* Build manually docker container in terminal: `docker buildx build -t segformer_image .`
 * Uncomment "Wait for client from debugpy"
 * Start "Terminal -> Run Task..." the task "docker-run: prebuild"
 * In "Run and Debug" run "Docker: Python - Attach Debug"
