@@ -10,6 +10,7 @@ from tqdm.notebook import tqdm
 from transformers import SegformerImageProcessor, SegformerFeatureExtractor, SegformerForImageClassification
 from torch.utils.data import DataLoader
 from PIL import Image
+from peft import LoraConfig, get_peft_model, PeftModel
 
 class ModelNN:
     def __init__(self):
@@ -39,14 +40,32 @@ class ModelNN:
 
         self.model = model
 
-def set_weights_for_training(self):
-    # Freeze all model layers except the last one
-    for param in self.model.parameters():
-        param.requires_grad = False
+    def set_weights_for_training(self):
+        # Freeze all model layers except the last one
+        for param in self.model.parameters():
+            param.requires_grad = False
 
-    # Unfreeze the final classification head
-    for param in self.model.decode_head.parameters():
-        param.requires_grad = True
+        # Unfreeze the final classification head
+        for param in self.model.decode_head.parameters():
+            param.requires_grad = True
+
+    def setup_lora(self):
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"Trainable parameters before Lora: {trainable_params}")
+
+        # Define LoRA Configuration
+        lora_config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            target_modules=["query", "value"],
+            lora_dropout=0.1,
+            bias="lora_only",
+            modules_to_save=["decode_head"],
+        )
+
+        self.model = get_peft_model(self.model, lora_config)
+        print("Trainable parameters after Lora:")
+        self.model.print_trainable_parameters()
 
     def train(self, image_processor: SegformerImageProcessor, train_dataloader: DataLoader):
         image_processor.do_reduce_labels
@@ -55,6 +74,7 @@ def set_weights_for_training(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=0.00006)
         # move model to GPU
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # self.device = torch.device("cpu")
         self.model.to(self.device)
 
         self.model.train()
@@ -113,3 +133,14 @@ def set_weights_for_training(self):
         predicted_segmentation_map = predicted_segmentation_map.cpu().numpy()
         print(predicted_segmentation_map)
         return predicted_segmentation_map
+    
+    def save(self, name: str = "segformer_model"):
+        self.model.save_pretrained(name + "_lora_adapter")
+        merged_model = self.model.merge_and_unload()
+        merged_model.save_pretrained(name + "full_finetuned")
+
+    def load_lora_separate(self, name: str = "segformer_model_lora_adapter"):
+        self.load_model()
+        lora_model = PeftModel.from_pretrained(self.model, name)
+
+        self.model = lora_model

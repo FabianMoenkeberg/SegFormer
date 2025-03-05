@@ -14,36 +14,156 @@ import numpy as np
 
 import cv2
 #from tqdm import notebook, tnrange
+import glob
 
 from datasets import load_dataset
 import requests, zipfile, io
 from torch.utils.data import Dataset
+import torch
 import os
-from PIL import Image
+from PIL import Image, ExifTags
 from transformers import SegformerImageProcessor
+
 from torch.utils.data import DataLoader
+from torch import Tensor
+from torchvision.transforms import Compose, ColorJitter, ToTensor, Lambda
+from albumentations.pytorch import ToTensorV2
+from transformers.image_utils import to_numpy_array
+import albumentations
 
-def importData(root_dir ='/app/ADE20k_toy_dataset'):
+def reduce_label(label: Tensor) -> np.ndarray:
+        label = to_numpy_array(label)
+        # Avoid using underflow conversion
+        label[label == 0] = 255
+        label = label - 1
+        label[label == 254] = 255
+        return label
 
-    if config.load_entire_dataset:
-        dataset = load_dataset("scene_parse_150")
+def visualize_seg_mask(image: np.ndarray, mask: np.ndarray):
+   color_seg = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
+   palette = np.array(ade_palette())
+   for label, color in enumerate(palette):
+       color_seg[mask == label, :] = color
 
-    image_processor = SegformerImageProcessor(reduce_labels=True)
+   color_seg = color_seg[..., ::-1]  # convert to BGR
+   img = np.array(image) * 0.5 + color_seg * 0.5  # plot the image with the segmentation map
+   img = img.astype(np.uint8)
+   plt.figure(figsize=(15, 10))
+   plt.imshow(img)
+   plt.axis("off")
+   plt.show()
 
-    train_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor)
-    valid_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor, train=False)
+class ADE20KDataset(Dataset):
+    def __init__(self, root_dir, processor, size=(512, 512)):
+        self.root_dir = root_dir
+        self.processor = processor
+        self.size = size
 
+        # Find all image files recursively
+        self.image_paths = sorted(glob.glob(os.path.join(root_dir, "**", "*.jpg"), recursive=True))
+        self.mask_paths = [p.replace(".jpg", ".png") for p in self.image_paths]  # Corresponding masks
+
+        # Ensure mask files exist
+        self.image_paths, self.mask_paths = zip(*[
+            (img, mask) for img, mask in zip(self.image_paths, self.mask_paths) if os.path.exists(mask)
+        ])
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        mask_path = self.mask_paths[idx]
+
+        image = Image.open(image_path).convert("RGB")
+        mask = Image.open(mask_path)
+
+        # Apply Segformer preprocessing
+        processed = self.processor(image, segmentation_maps=mask, size=self.size, return_tensors="pt")
+
+        return {
+            "pixel_values": processed["pixel_values"].squeeze(0),  # (3, H, W)
+            "labels": processed["labels"].squeeze(0)  # (H, W)
+        }
+
+def transformsA(examples):
+    examples["pixel_values"] = [image.convert("RGB").resize((100,100)) for image in examples["image"]]
+    examples["labels"] = [annotation.convert("RGB").resize((100, 100)) for annotation in examples["annotation"]
+    ]
+    return examples
+
+transformBase = albumentations.Compose(
+    [
+        # ToTensor(),
+        albumentations.Resize(config.im_width, config.im_height),
+        albumentations.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
+        albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        albumentations.ToRGB(),
+        ToTensorV2()
+    ]
+)
+
+def transforms(examples):
+    transformed_images, transformed_masks = [], []
+
+    for image, seg_mask in zip(examples["image"], examples["annotation"]):
+        image, seg_mask = np.array(image, np.float32)/255.0, np.array(seg_mask, np.int64)
+        # image, seg_mask = ToTensor()(image), ToTensor()(seg_mask)
+        transformed = transformBase(image=image, mask=seg_mask)
+        transformed_images.append(transformed["image"])
+        transformed_masks.append(reduce_label(transformed["mask"].long()))
+    examples["pixel_values"] = transformed_images
+    examples["labels"] = transformed_masks
+
+    del examples["image"]
+    del examples["annotation"]
+    return examples
+
+jitter = Compose(
+    [
+         ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.2),
+         ToTensor(),
+    ]
+)
+
+def transformsB(examples):
+    examples["pixel_values"] = [jitter(image.convert("RGB")) for image in examples["image"]]
+    return examples
+
+
+def importData(root_dir: str ='/app/ADE20k_toy_dataset'):
+
+    if config.load_entire_dataset:#False:#
+        image_processor = SegformerImageProcessor(reduce_labels=True)
+        # dataset = load_dataset("scene_parse_150", split="train+test")
+        # dataset = dataset.train_test_split(test_size=0.1)
+        # train_dataset = dataset['train']
+        # valid_dataset = dataset['test']
+        train_dataset = load_dataset("scene_parse_150", split="train")
+        valid_dataset = load_dataset("scene_parse_150", split="validation")
+        # test_dataset = load_dataset("scene_parse_150", "instance_segmentation", split="test")
+        train_dataset.set_transform(transforms)
+        valid_dataset.set_transform(transforms)
+    else:
+        image_processor = SegformerImageProcessor(reduce_labels=True)
+
+        # train_dataset = ADE20KDataset(os.path.join(root_dir, 'training'), image_processor)
+        # valid_dataset = ADE20KDataset(os.path.join(root_dir, 'validation'), image_processor)
+
+        train_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor)
+        valid_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor, train=False)
+    train_dataset[0]
     print("Number of training examples:", len(train_dataset))
     print("Number of validation examples:", len(valid_dataset))
 
-    encoded_inputs = train_dataset[0]
-    print(encoded_inputs["pixel_values"].shape)
-    print(encoded_inputs["labels"].shape)
-    print(encoded_inputs["labels"])
-    print(encoded_inputs["labels"].squeeze().unique())
+    # encoded_inputs = train_dataset[0]
+    # print(encoded_inputs["pixel_values"].shape)
+    # print(encoded_inputs["labels"].shape)
+    # print(encoded_inputs["labels"])
+    # print(encoded_inputs["labels"].squeeze().unique())
 
-    train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=2)
+    train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=config.batch_size)
 
     batch = next(iter(train_dataloader))
 
@@ -69,7 +189,7 @@ def download_data():
 class SemanticSegmentationDataset(Dataset):
     """Image (semantic) segmentation dataset."""
 
-    def __init__(self, root_dir, image_processor, train=True):
+    def __init__(self, root_dir: str, image_processor: SegformerImageProcessor, train: bool=True):
         """
         Args:
             root_dir (string): Root directory of the dataset containing the images + annotations.
@@ -157,7 +277,7 @@ def ade_palette():
             [102, 255, 0], [92, 0, 255]]
      
 
-def export_single_result(predicted_segmentation_map, image: Image.Image, output_name, path):
+def export_single_result(predicted_segmentation_map, image: Image.Image, output_name: str, path: str):
     color_seg = np.zeros((predicted_segmentation_map.shape[0],
                       predicted_segmentation_map.shape[1], 3), dtype=np.uint8) # height, width, 3
 
@@ -177,7 +297,7 @@ def export_single_result(predicted_segmentation_map, image: Image.Image, output_
     plt.close()
 
 
-def export_resuls(predicted_maps: list[Image.Image], images: list[Image.Image], path):
+def export_resuls(predicted_maps: list[Image.Image], images: list[Image.Image], path: str):
 
     for index, (pred, image) in enumerate(zip(predicted_maps, images)):
         export_single_result(pred, image, f'result_{index}.png', path)

@@ -18,6 +18,7 @@ from PIL import Image
 import cv2
 
 from datetime import datetime
+from accelerate.utils import write_basic_config
 
 
 
@@ -26,10 +27,13 @@ np.random.seed(config.seed)
 # utils.download_data()
 
 image_processor, train_dataloader, valid_dataloader = utils.importData()
+# image_processor, train_dataloader, valid_dataloader = utils.importData('/data/fmoenk_17bc7f2f/ADE20K_2021_17_01/images/ADE')
+
 
 model = modelDef.ModelNN()
 
 model.load_model()
+model.setup_lora()
 
 model.train(image_processor, train_dataloader)
 
