@@ -1,5 +1,5 @@
 import config
-from transformers import SegformerForSemanticSegmentation
+from transformers import SegformerForSemanticSegmentation, SegformerFeatureExtractor
 import json
 from huggingface_hub import hf_hub_download
 import evaluate
@@ -11,21 +11,23 @@ from transformers import SegformerImageProcessor, SegformerFeatureExtractor, Seg
 from torch.utils.data import DataLoader
 from PIL import Image
 from peft import LoraConfig, get_peft_model, PeftModel
+from numpy.typing import NDArray
 
 class ModelNN:
-    def __init__(self):
+    def __init__(self) -> None:
         self.model = None
         self.id2label = None
         self.repo_id = "huggingface/label-files"
         self.filename = "ade20k-id2label.json"
         # self.modelname = "nvidia/mit-b0"
         self.modelname = "nvidia/segformer-b2-finetuned-ade-512-512"
+        # self.modelname = "nvidia/mit-b0"
 
         self.device = None
 
         self.metric = evaluate.load("mean_iou")
 
-    def load_model(self):
+    def load_model(self) -> None:
         # load id2label mapping from a JSON on the hub
         self.id2label = json.load(open(hf_hub_download(repo_id=self.repo_id, filename=self.filename, repo_type="dataset"), "r"))
         self.id2label = {int(k): v for k, v in self.id2label.items()}
@@ -40,7 +42,7 @@ class ModelNN:
 
         self.model = model
 
-    def set_weights_for_training(self):
+    def set_weights_for_training(self) -> None:
         # Freeze all model layers except the last one
         for param in self.model.parameters():
             param.requires_grad = False
@@ -49,7 +51,7 @@ class ModelNN:
         for param in self.model.decode_head.parameters():
             param.requires_grad = True
 
-    def setup_lora(self):
+    def setup_lora(self) -> None:
         trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         print(f"Trainable parameters before Lora: {trainable_params}")
 
@@ -67,14 +69,17 @@ class ModelNN:
         print("Trainable parameters after Lora:")
         self.model.print_trainable_parameters()
 
-    def train(self, image_processor: SegformerImageProcessor, train_dataloader: DataLoader):
+    def train(self, image_processor: SegformerImageProcessor, train_dataloader: DataLoader) -> None:
         image_processor.do_reduce_labels
 
         # define optimizer
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=0.00006)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.lr)
         # move model to GPU
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # self.device = torch.device("cpu")
+        if config.GPU_USAGE:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device("cpu")
+
         self.model.to(self.device)
 
         self.model.train()
@@ -119,7 +124,7 @@ class ModelNN:
                         print("Mean_iou:", metrics["mean_iou"])
                         print("Mean accuracy:", metrics["mean_accuracy"])
 
-    def inference(self, image_processor: SegformerImageProcessor, image: Image.Image):
+    def inference(self, image_processor: SegformerImageProcessor, image: Image.Image) -> NDArray:
         pixel_values = image_processor(image, return_tensors="pt").pixel_values.to(self.device)
 
         # forward pass
@@ -134,12 +139,12 @@ class ModelNN:
         print(predicted_segmentation_map)
         return predicted_segmentation_map
     
-    def save(self, name: str = "segformer_model"):
+    def save(self, name: str = "segformer_model") -> None:
         self.model.save_pretrained(name + "_lora_adapter")
         merged_model = self.model.merge_and_unload()
         merged_model.save_pretrained(name + "full_finetuned")
 
-    def load_lora_separate(self, name: str = "segformer_model_lora_adapter"):
+    def load_lora_separate(self, name: str = "segformer_model_lora_adapter") -> None:
         self.load_model()
         lora_model = PeftModel.from_pretrained(self.model, name)
 
