@@ -1,3 +1,5 @@
+accelerate==1.4
+albumentations==2.0
 #absl-py==1.0.0
 #certifi==2022.9.24
 datasets
@@ -21,7 +23,8 @@ opencv-python==4.11.0.86
 #os-sys==2.1
 packaging==21.3
 pandas
-Pillow==9.0.1
+peft
+Pillow==11.1
 #pluggy==1.0.0
 protobuf
 #py==1.11.0
@@ -36,6 +39,7 @@ scikit-learn==1.6
 scipy
 tqdm==4.67
 torch==2.6
+torchvision==0.21
 transformers==4.49
 #typeguard==2.13.3
 #typing_extensions==4.3.0

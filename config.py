@@ -1,7 +1,8 @@
 GPU_USAGE = True
-loadModel = False
-trainModel = True
-load_entire_dataset = False
+load_model = False
+train_model = True
+load_entire_dataset = True
+reduced_full_dataset = False
 
 name = 'galilei'
 
@@ -23,8 +24,6 @@ seed = 1
 
 N_segClasses = 4 #for Galilei
 
-
-
 im_width =128
 im_height = 128
 im_chan = 3
@@ -34,7 +33,7 @@ out_height = 128
 
 nEpochs = 10
 validation_split = 0.1
-batch_size = 10
+batch_size = 60
 
-lr = 0.00002
+lr = 0.00001
 
