@@ -4,7 +4,7 @@ import json
 from huggingface_hub import hf_hub_download
 import evaluate
 import torch
-from torch import nn
+from torch import nn, optim
 from sklearn.metrics import accuracy_score
 from tqdm.notebook import tqdm
 from transformers import SegformerImageProcessor, SegformerFeatureExtractor, SegformerForImageClassification
@@ -69,11 +69,13 @@ class ModelNN:
         print("Trainable parameters after Lora:")
         self.model.print_trainable_parameters()
 
-    def train(self, image_processor: SegformerImageProcessor, train_dataloader: DataLoader) -> None:
+    def train(self, image_processor: SegformerImageProcessor, train_dataloader: DataLoader, valid_dataloader: DataLoader = None) -> None:
         image_processor.do_reduce_labels
 
         # define optimizer
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.lr)
+        optimizer = optim.AdamW(self.model.parameters(), lr=config.lr)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=1, verbose=True)
+
         # move model to GPU
         if config.GPU_USAGE:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -85,44 +87,78 @@ class ModelNN:
         self.model.train()
         for epoch in range(config.nEpochs):  # loop over the dataset multiple times
             print("Epoch:", epoch)
+            running_tloss = 0.0
+            n = 0
             for idx, batch in enumerate(tqdm(train_dataloader)):
-                    # get the inputs;
-                    pixel_values = batch["pixel_values"].to(self.device)
-                    labels = batch["labels"].to(self.device)
+                # get the inputs;
+                pixel_values = batch["pixel_values"].to(self.device)
+                labels = batch["labels"].to(self.device)
 
-                    # zero the parameter gradients
-                    optimizer.zero_grad()
+                # zero the parameter gradients
+                optimizer.zero_grad()
 
-                    # forward + backward + optimize
-                    outputs = self.model(pixel_values=pixel_values, labels=labels)
-                    loss, logits = outputs.loss, outputs.logits
+                # forward + backward + optimize
+                outputs = self.model(pixel_values=pixel_values, labels=labels)
+                loss, logits = outputs.loss, outputs.logits
 
-                    loss.backward()
-                    optimizer.step()
+                loss.backward()
+                optimizer.step()
 
-                    # evaluate
-                    with torch.no_grad():
-                        upsampled_logits = nn.functional.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
-                        predicted = upsampled_logits.argmax(dim=1)
+                # evaluate
+                with torch.no_grad():
+                    upsampled_logits = nn.functional.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
+                    predicted = upsampled_logits.argmax(dim=1)
 
-                        # note that the metric expects predictions + labels as numpy arrays
-                        self.metric.add_batch(predictions=predicted.detach().cpu().numpy(), references=labels.detach().cpu().numpy())
+                    # note that the metric expects predictions + labels as numpy arrays
+                    self.metric.add_batch(predictions=predicted.detach().cpu().numpy(), references=labels.detach().cpu().numpy())
 
-                    # let's print loss and metrics every 100 batches
-                    if idx % 100 == 0:
-                        # currently using _compute instead of compute
-                        # see this issue for more info: https://github.com/huggingface/evaluate/pull/328#issuecomment-1286866576
-                        metrics = self.metric._compute(
-                                predictions=predicted.cpu(),
-                                references=labels.cpu(),
-                                num_labels=len(self.id2label),
-                                ignore_index=255,
-                                reduce_labels=False, # we've already reduced the labels ourselves
-                            )
+                # let's print loss and metrics every 100 batches
+                if idx % 100 == 0:
+                    # currently using _compute instead of compute
+                    # see this issue for more info: https://github.com/huggingface/evaluate/pull/328#issuecomment-1286866576
+                    metrics = self.metric._compute(
+                            predictions=predicted.cpu(),
+                            references=labels.cpu(),
+                            num_labels=len(self.id2label),
+                            ignore_index=255,
+                            reduce_labels=False, # we've already reduced the labels ourselves
+                        )
 
-                        print("Loss:", loss.item())
-                        print("Mean_iou:", metrics["mean_iou"])
-                        print("Mean accuracy:", metrics["mean_accuracy"])
+                    print("Loss:", loss.detach().cpu().item())
+                    print("Mean_iou:", metrics["mean_iou"])
+                    print("Mean accuracy:", metrics["mean_accuracy"])
+
+                running_tloss += loss.detach().cpu()*pixel_values.size(0)
+                n += pixel_values.size(0)
+            
+            running_tloss /= len(train_dataloader)*config.batch_size
+            
+            if valid_dataloader:
+                running_vloss = 0.0
+                # Set the model to evaluation mode, disabling dropout and using population
+                # statistics for batch normalization.
+                self.model.eval()
+
+                # Disable gradient computation and reduce memory consumption.
+                with torch.no_grad():
+                    for i, vdata in enumerate(valid_dataloader):
+                        pixel_values = vdata["pixel_values"].to(self.device)
+                        labels = vdata["labels"].to(self.device)
+                        voutputs = self.model(pixel_values=pixel_values, labels=labels)
+                        # loss, logits = voutputs.loss, voutputs.logits
+                        # upsampled_logits = nn.functional.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
+                        # predicted = upsampled_logits.argmax(dim=1)
+
+                        # # note that the metric expects predictions + labels as numpy arrays
+                        # self.metric.add_batch(predictions=predicted.detach().cpu().numpy(), references=labels.detach().cpu().numpy())
+
+                        vloss = voutputs.loss.detach().cpu()
+                        running_vloss += vloss*pixel_values.size(0)
+
+            running_vloss /= len(valid_dataloader)*config.batch_size
+            scheduler.step(running_vloss)
+
+            print(f'Epoch {epoch} \t\t Training Loss: {running_tloss} \t\t Validation Loss: {running_vloss}')
 
     def inference(self, image_processor: SegformerImageProcessor, image: Image.Image) -> NDArray:
         pixel_values = image_processor(image, return_tensors="pt").pixel_values.to(self.device)

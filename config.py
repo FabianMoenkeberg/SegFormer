@@ -24,8 +24,8 @@ seed = 1
 
 N_segClasses = 4 #for Galilei
 
-im_width =128
-im_height = 128
+im_width = 256
+im_height = 256
 im_chan = 3
 
 out_width = 128
@@ -33,7 +33,7 @@ out_height = 128
 
 nEpochs = 10
 validation_split = 0.1
-batch_size = 60
+batch_size = 20
 
-lr = 0.00001
+lr = 0.0001
 

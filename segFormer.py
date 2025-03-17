@@ -34,7 +34,7 @@ model.load_model()
 model.setup_lora()
 
 if config.train_model:
-    model.train(image_processor, train_dataloader)
+    model.train(image_processor, train_dataloader, valid_dataloader=valid_dataloader)
 
 
 # Test on some images

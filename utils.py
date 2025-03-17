@@ -111,8 +111,8 @@ def import_data(root_dir: str ='/app/ADE20k_toy_dataset'):
         valid_dataset = load_dataset("scene_parse_150", split="validation", trust_remote_code=True)
 
         if config.reduced_full_dataset:
-            train_dataset = train_dataset.select(range(100))
-            valid_dataset = valid_dataset.select(range(100))
+            train_dataset = train_dataset.select(range(500))
+            valid_dataset = valid_dataset.select(range(500))
         # train_dataset.map(transformsBase, batched=True)
         # valid_dataset.map(transformsBase, batched=True)
         
@@ -156,6 +156,9 @@ def download_data() -> None:
     r = requests.get(url)
     z = zipfile.ZipFile(io.BytesIO(r.content))
     z.extractall()
+
+
+
 
 
 class SemanticSegmentationDataset(Dataset):
