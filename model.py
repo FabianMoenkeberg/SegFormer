@@ -117,8 +117,8 @@ class ModelNN:
                     # currently using _compute instead of compute
                     # see this issue for more info: https://github.com/huggingface/evaluate/pull/328#issuecomment-1286866576
                     metrics = self.metric._compute(
-                            predictions=predicted.cpu(),
-                            references=labels.cpu(),
+                            predictions=predicted.detach().cpu(),
+                            references=labels.detach().cpu(),
                             num_labels=len(self.id2label),
                             ignore_index=255,
                             reduce_labels=False, # we've already reduced the labels ourselves

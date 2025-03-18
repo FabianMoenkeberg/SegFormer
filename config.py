@@ -21,7 +21,7 @@ path_test = 'test/'
 
 seed = 1
 
-
+N_samples = 500
 N_segClasses = 4 #for Galilei
 
 im_width = 256

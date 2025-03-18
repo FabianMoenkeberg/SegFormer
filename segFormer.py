@@ -54,4 +54,4 @@ prediction_red1 = utils.invert_reduce_label(prediction_red)
 
 utils.export_single_result(prediction, image, "prediction_test.png", "")
 utils.export_single_result(prediction_org, image, "prediction_org.png", "")
-utils.export_single_result(prediction_red1, image.resize((512,512)), "prediction_test1.png", "")
+utils.export_single_result(prediction_red1, image.resize((image_processor.size['height'], image_processor.size['width'])), "prediction_test1.png", "")

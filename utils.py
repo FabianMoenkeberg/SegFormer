@@ -111,8 +111,8 @@ def import_data(root_dir: str ='/app/ADE20k_toy_dataset'):
         valid_dataset = load_dataset("scene_parse_150", split="validation", trust_remote_code=True)
 
         if config.reduced_full_dataset:
-            train_dataset = train_dataset.select(range(500))
-            valid_dataset = valid_dataset.select(range(500))
+            train_dataset = train_dataset.select(range(config.N_samples))
+            valid_dataset = valid_dataset.select(range(config.N_samples))
         # train_dataset.map(transformsBase, batched=True)
         # valid_dataset.map(transformsBase, batched=True)
         
