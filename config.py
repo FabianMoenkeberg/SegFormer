@@ -1,15 +1,16 @@
 GPU_USAGE = True
-load_model = False
-train_model = True
+load_local_model = True
+train_model = False
 load_entire_dataset = True
 reduced_full_dataset = False
+load_additional_data = False
 
 name = 'galilei'
 
 name_loadModel = 'model-galilei-seg.h5'
 
-path_data = 'D:\data\eyeSegmentation\GalileiData\GalileiColourSegmentationData'
-path_data = '/data/GalileiData/Fischer09062021'
+path_data = '/data_eye/GalileiData/Fischer09062021'
+path_data = '/data_eye/eyeSegmentationFemto/applanated/segmented'
 
 path_save_test = 'res_test'
 path_save_train = 'res_train'
@@ -21,19 +22,20 @@ path_test = 'test/'
 
 seed = 1
 
+N_samples = 500
+N_segClasses = 2 #for Galilei
+# N_segClasses = 150
 
-N_segClasses = 4 #for Galilei
-
-im_width =128
-im_height = 128
+im_width = 256
+im_height = 256
 im_chan = 3
 
-out_width = 128
-out_height = 128
+out_width = im_width//2
+out_height = im_height//2
 
-nEpochs = 10
+nEpochs = 20
 validation_split = 0.1
-batch_size = 60
+batch_size = 30
 
-lr = 0.00001
+lr = 0.001
 
