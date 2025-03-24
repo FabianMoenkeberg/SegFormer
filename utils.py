@@ -1,27 +1,17 @@
-
-import sys
-import random
-import warnings
-from zipfile import ZipFile
-import json 
-import shutil
-import re
 import config as config
+from utils_eye import EyeSegmentationDataset
 
-#import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 import cv2
-#from tqdm import notebook, tnrange
-import glob
 
 from datasets import load_dataset
 import requests, zipfile, io
 from torch.utils.data import Dataset
 import torch
 import os
-from PIL import Image, ExifTags
+from PIL import Image
 from transformers import SegformerImageProcessor, SegformerFeatureExtractor
 
 from torch.utils.data import DataLoader
@@ -73,7 +63,6 @@ transformNormalize = albumentations.Compose(
         albumentations.Resize(config.im_width, config.im_height),
         albumentations.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
         albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        # albumentations.ToRGB(),
         albumentations.Lambda(image=ensure_rgb),  # Convert grayscale images to RGB
         ToTensorV2()
     ]
@@ -82,7 +71,14 @@ transformNormalize = albumentations.Compose(
 def transforms(examples: dict) -> dict:
     transformed_images, transformed_masks = [], []
 
-    for image, seg_mask in zip(examples["image"], examples["annotation"]):
+    if "image" in examples:
+        image_name = "image"
+        lable_name = "annotation"
+    else:
+        image_name = "pixel_values"
+        lable_name = "labels"
+
+    for image, seg_mask in zip(examples[image_name], examples[lable_name]):
         image, seg_mask = np.array(image, np.float32), np.array(seg_mask, np.int64)
         image = ensure_rgb(image)
         image, seg_mask = ToTensor()(image), ToTensor()(seg_mask)
@@ -94,27 +90,28 @@ def transforms(examples: dict) -> dict:
     examples["pixel_values"] = transformed_images
     examples["labels"] = transformed_masks
 
-    del examples["image"]
-    del examples["annotation"]
+    if image_name == "image":
+        del examples["image"]
+        del examples["annotation"]
     return examples
 
 
 def import_data(root_dir: str ='/app/ADE20k_toy_dataset'):
 
     if config.load_entire_dataset:#False:#
-        # image_processor0 = SegformerImageProcessor(reduce_labels=True)
+
         image_processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b2-finetuned-ade-512-512")
+        image_processor.do_reduce_labels = False
+        image_processor.do_rescale = False
         image_processor.size['height']=config.im_height
         image_processor.size['width']=config.im_width
 
-        train_dataset = load_dataset("scene_parse_150", split="train", trust_remote_code=True)
-        valid_dataset = load_dataset("scene_parse_150", split="validation", trust_remote_code=True)
+        train_dataset = EyeSegmentationDataset(config.path_data, image_processor=image_processor, train=True)
+        valid_dataset = EyeSegmentationDataset(config.path_data, image_processor=image_processor, train=False)
 
         if config.reduced_full_dataset:
             train_dataset = train_dataset.select(range(config.N_samples))
             valid_dataset = valid_dataset.select(range(config.N_samples))
-        # train_dataset.map(transformsBase, batched=True)
-        # valid_dataset.map(transformsBase, batched=True)
         
         def transform_processor(examples: dict):
             examples = transforms(examples)
@@ -124,29 +121,15 @@ def import_data(root_dir: str ='/app/ADE20k_toy_dataset'):
             examples["labels"] = inputs["labels"]
 
             return examples
-        
-        train_dataset.set_transform(transform_processor)
-        valid_dataset.set_transform(transform_processor)
 
     else:
-        image_processor = SegformerImageProcessor(reduce_labels=True)
+        image_processor = SegformerImageProcessor(reduce_labels=False)
 
         train_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor)
         valid_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor, train=False)
 
     train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     valid_dataloader = DataLoader(valid_dataset, batch_size=config.batch_size)
-
-    batch = next(iter(train_dataloader))
-
-    for k,v in batch.items():
-        print(k, v.shape)
-
-    print(batch["labels"].shape)
-
-    mask = (batch["labels"] != 255)
-    print(mask)
-    print(batch["labels"][mask])
 
     return image_processor, train_dataloader, valid_dataloader
 
@@ -156,9 +139,6 @@ def download_data() -> None:
     r = requests.get(url)
     z = zipfile.ZipFile(io.BytesIO(r.content))
     z.extractall()
-
-
-
 
 
 class SemanticSegmentationDataset(Dataset):
