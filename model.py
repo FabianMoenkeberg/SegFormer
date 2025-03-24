@@ -34,7 +34,7 @@ class ModelNN:
         else:
             self.device = torch.device("cpu")
 
-    def get_femto_id_to_label(self):
+    def get_femto_id_to_label(self) -> dict:
         return {0: 'background', 1: 'pupil', 2: 'iris'}
 
     def load_model(self) -> None:
@@ -216,7 +216,7 @@ class ModelNN:
 
 
 
-    def inference(self, image_processor: SegformerImageProcessor, pixel_values) -> NDArray:
+    def inference(self, image_processor: SegformerImageProcessor, pixel_values: NDArray) -> NDArray:
         # forward pass
         with torch.no_grad():
             outputs = self.model(pixel_values=pixel_values)

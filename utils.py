@@ -96,7 +96,7 @@ def transforms(examples: dict) -> dict:
     return examples
 
 
-def import_data(root_dir: str ='/app/ADE20k_toy_dataset'):
+def import_data(root_dir: str ='/app/ADE20k_toy_dataset') -> dict:
 
     if config.load_entire_dataset:#False:#
 
@@ -190,7 +190,7 @@ class SemanticSegmentationDataset(Dataset):
         return encoded_inputs
     
 
-def ade_palette():
+def ade_palette() -> list[list[int]]:
     """ADE20K palette that maps each class to RGB values."""
     return [[120, 120, 120], [180, 120, 120], [6, 230, 230], [80, 50, 50],
             [4, 200, 3], [120, 120, 80], [140, 140, 140], [204, 5, 255],

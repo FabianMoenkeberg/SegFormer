@@ -4,7 +4,7 @@ import config as config
 #import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import NDArray, Any
 import cv2
 #from tqdm import notebook, tnrange
 import glob
@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 from torch import Tensor
 from sklearn.model_selection import train_test_split
 
-def import_data(sample_dir):
+def import_data(sample_dir: str):
 
     # images
     img = cv2.imread(sample_dir + '/image_resize.png')
@@ -36,7 +36,7 @@ def import_data(sample_dir):
     return img, mask_a
 
 
-def add_conversion_tp_bw_images(images, labels):
+def add_conversion_tp_bw_images(images: NDArray, labels: NDArray) -> tuple[NDArray, NDArray]:
     n = len(images)
     imagesBW = np.sum(images, axis=3)/3
     imagesBW = np.stack((imagesBW,imagesBW,imagesBW),axis=-1)
@@ -46,7 +46,7 @@ def add_conversion_tp_bw_images(images, labels):
     return images, labels
 
 
-def load_data(path_data: str = config.path_data, Y_split: float = 0.9):
+def load_data(path_data: str = config.path_data, Y_split: float = 0.9)->tuple[NDArray, NDArray, NDArray, NDArray, list[int], list[int], NDArray, tuple[int, int]]:
     img = cv2.imread(path_data + '/sample_1/image_resize.png')[:,:,1]
     sizes_test = [img.shape[0], img.shape[1]]
 
@@ -92,7 +92,7 @@ def load_data(path_data: str = config.path_data, Y_split: float = 0.9):
     return X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test
 
 
-def load_additional_data(X_train, Y_train, path_data = config.path_data):
+def load_additional_data(X_train: NDArray, Y_train: NDArray, path_data: str = config.path_data):
     img = cv2.imread(path_data + '/sample_1/image_resize.png')[:,:,1]
     sizes_test = [img.shape[0], img.shape[1]]
 
@@ -140,7 +140,7 @@ def load_additional_data(X_train, Y_train, path_data = config.path_data):
 class EyeSegmentationDataset(Dataset):
     """Image (semantic) segmentation dataset."""
 
-    def __init__(self, root_dir: str, image_processor: SegformerImageProcessor, train: bool=True):
+    def __init__(self, root_dir: str, image_processor: SegformerImageProcessor, train: bool=True) -> None:
         """
         Args:
             root_dir (string): Root directory of the dataset containing the images + annotations.
@@ -182,11 +182,11 @@ class EyeSegmentationDataset(Dataset):
             
         return encoded_inputs
     
-    def set_transform(self, transform):
+    def set_transform(self, transform: Any) -> None:
         """Update the dataset's transformation."""
         self.transform = transform
 
 
-def ade_palette():
+def ade_palette() -> list[list[int]]:
     """ADE20K palette that maps each class to RGB values."""
     return [[0, 0, 0], [0, 0, 255], [0, 255, 0]]
