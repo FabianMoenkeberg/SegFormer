@@ -60,18 +60,18 @@ def ensure_rgb(image: NDArray) -> NDArray:
 transformAugmentationAll = albumentations.Compose(
     [
         # ToTensor(),
-        albumentations.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
         # albumentations.ToRGB(),  # Convert grayscale images to RGB
         # albumentations.RandomScale(p=0.5),
         albumentations.RandomRotate90(),
         # ToTensorV2()
-    ], additional_targets={'label': 'image'}
+    ], additional_targets={'label': 'image'}, is_check_shapes=False
 )
 
 transformAugmentationImage = albumentations.Compose(
     [
         # ToTensor(),
-        albumentations.ToGray(p=0.3),
+        albumentations.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
+        albumentations.ToGray(p=0.3, int=3),
         # albumentations.ToRGB(),  # Convert grayscale images to RGB
         # ToTensorV2()
     ]
@@ -125,21 +125,23 @@ def import_data(root_dir: str ='/app/ADE20k_toy_dataset') -> dict:
         
         def transform_processor(examples: dict):
             examples = transforms(examples)
-            inputs = image_processor(images=examples["pixel_values"], segmentation_maps=examples["labels"], return_tensors="pt")
-
-            examples["pixel_values"] = inputs["pixel_values"]
-            examples["labels"] = inputs["labels"]
 
             return examples
 
+        train_dataset.set_transform_image(transformAugmentationImage)
+        train_dataset.set_transform(transformAugmentationAll)
     else:
         image_processor = SegformerImageProcessor(reduce_labels=False)
 
         train_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor)
         valid_dataset = SemanticSegmentationDataset(root_dir=root_dir, image_processor=image_processor, train=False)
 
+
     train_dataloader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     valid_dataloader = DataLoader(valid_dataset, batch_size=config.batch_size)
+
+    batch = next(iter(train_dataloader))
+
 
     return image_processor, train_dataloader, valid_dataloader
 

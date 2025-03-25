@@ -61,7 +61,7 @@ def load_data(path_data: str = config.path_data, Y_split: float = 0.9)->tuple[ND
     train_ids = range(0,config.N_samples)
 
     id_map = np.zeros(config.N_samples, dtype=np.uint32)
-    X_train = np.zeros((config.N_samples, config.im_height, config.im_width, config.im_chan), dtype=np.uint8)
+    X_train = np.zeros((config.N_samples, config.im_height, config.im_width, config.im_chan), dtype=np.float32)
     Y_train = np.zeros((config.N_samples, config.out_height, config.out_width), dtype=np.float32) 
     
     n = 0
@@ -150,6 +150,8 @@ class EyeSegmentationDataset(Dataset):
         self.root_dir = root_dir
         self.image_processor = image_processor
         self.train = train
+        self.transform_image = None
+        self.shared_transform = None
 
         # read images
         X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test = load_data(path_data=self.root_dir)
@@ -177,7 +179,7 @@ class EyeSegmentationDataset(Dataset):
         if self.shared_transform:
             augmented = self.shared_transform(image=image, label=segmentation_map)
             image = augmented['image']
-            segmentation_map = augmented['labels']
+            segmentation_map = augmented['label']
 
         # randomly crop + pad both image and segmentation map to same size
         encoded_inputs = self.image_processor(image, segmentation_map, return_tensors="pt")
