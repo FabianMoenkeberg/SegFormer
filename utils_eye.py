@@ -103,19 +103,21 @@ def load_additional_data(X_train: NDArray, Y_train: NDArray, path_data: str = co
 
     config.N_samples_add = np.minimum(len(sample_dirs), config.N_samples_add)
     train_ids = range(0,config.N_samples_add)
+    n_base = X_train.shape[0]
 
     id_map = np.zeros(config.N_samples_add, dtype=np.uint32)
-    X_train0 = np.zeros((config.N_samples_add, config.im_height, config.im_width, config.im_chan), dtype=np.uint8)
-    Y_train0 = np.zeros((config.N_samples_add, config.out_height, config.out_width), dtype=np.float32) 
-
+    X_train0 = np.zeros((config.N_samples_add + n_base, config.im_height, config.im_width, config.im_chan), dtype=np.float32)
+    Y_train0 = np.zeros((config.N_samples_add + n_base, config.out_height, config.out_width), dtype=np.float32) 
+    X_train0[:n_base, :, :, :] = X_train
+    Y_train0[:n_base, :, :] = Y_train
     n = 0
 
     for id_ in train_ids:
     
         X, mask = import_data(sample_dirs[id_])
 
-        X_train0[n] = X
-        Y_train0[n] = mask
+        X_train0[n + n_base] = X
+        Y_train0[n + n_base] = mask
 
         id_map[n] = int(sample_dirs[id_].split('_')[-1])
 
@@ -127,41 +129,30 @@ def load_additional_data(X_train: NDArray, Y_train: NDArray, path_data: str = co
 
     config.N_samples_add = n
 
-    X_train0 = X_train0[:config.N_samples_add]
-    Y_train0 = Y_train0[:config.N_samples_add]
+    X_train0 = X_train0[:(config.N_samples_add + n_base)]
+    Y_train0 = Y_train0[:(config.N_samples_add + n_base)]
 
-    X_train= np.append(X_train, X_train0, axis=0)
-    Y_train= np.append(Y_train, Y_train0, axis=0)
-
-
-    return X_train, Y_train
+    return X_train0, Y_train0
 
 
 class EyeSegmentationDataset(Dataset):
     """Image (semantic) segmentation dataset."""
 
-    def __init__(self, root_dir: str, image_processor: SegformerImageProcessor, train: bool=True) -> None:
+    def __init__(self, X, Y, idx, image_processor: SegformerImageProcessor, train: bool=True) -> None:
         """
         Args:
             root_dir (string): Root directory of the dataset containing the images + annotations.
             image_processor (SegFormerImageProcessor): image processor to prepare images + segmentation maps.
             train (bool): Whether to load "training" or "validation" images + annotations.
         """
-        self.root_dir = root_dir
         self.image_processor = image_processor
         self.train = train
         self.transform_image = None
         self.shared_transform = None
 
-        # read images
-        X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test = load_data(path_data=self.root_dir)
-
-        if train:
-            self.images = X_train/255.0
-            self.annotations = Y_train
-        else:
-            self.images = X_test/255.0
-            self.annotations = Y_test
+        self.images = X
+        self.images /= 255.0
+        self.annotations = Y
 
         assert len(self.images) == len(self.annotations), "There must be as many images as there are segmentation maps"
 

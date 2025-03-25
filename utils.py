@@ -1,5 +1,5 @@
 import config as config
-from utils_eye import EyeSegmentationDataset
+from utils_eye import EyeSegmentationDataset, load_data
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -116,8 +116,11 @@ def import_data(root_dir: str ='/app/ADE20k_toy_dataset') -> dict:
         image_processor.size['height']=config.im_height
         image_processor.size['width']=config.im_width
 
-        train_dataset = EyeSegmentationDataset(config.path_data, image_processor=image_processor, train=True)
-        valid_dataset = EyeSegmentationDataset(config.path_data, image_processor=image_processor, train=False)
+        # read images
+        X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test = load_data(path_data=config.path_data)
+
+        train_dataset = EyeSegmentationDataset(X_train, Y_train, idx1, image_processor=image_processor, train=True)
+        valid_dataset = EyeSegmentationDataset(X_test, Y_test, idx2, image_processor=image_processor, train=False)
 
         if config.reduced_full_dataset:
             train_dataset = train_dataset.select(range(config.N_samples))

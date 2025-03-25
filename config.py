@@ -1,9 +1,9 @@
 GPU_USAGE = True
 load_local_model = True
-train_model = False
+train_model = True
 load_entire_dataset = True
 reduced_full_dataset = False
-load_additional_data = False
+load_additional_data = True
 
 name = 'galilei'
 
@@ -35,7 +35,7 @@ im_chan = 3
 out_width = im_width//2
 out_height = im_height//2
 
-nEpochs = 20
+nEpochs = 5
 validation_split = 0.1
 batch_size = 30
 
