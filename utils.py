@@ -57,14 +57,23 @@ def ensure_rgb(image: NDArray) -> NDArray:
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     return image
 
-transformNormalize = albumentations.Compose(
+transformAugmentationAll = albumentations.Compose(
     [
         # ToTensor(),
-        albumentations.Resize(config.im_width, config.im_height),
-        albumentations.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
-        albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        albumentations.Lambda(image=ensure_rgb),  # Convert grayscale images to RGB
-        ToTensorV2()
+        albumentations.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.5),
+        # albumentations.ToRGB(),  # Convert grayscale images to RGB
+        # albumentations.RandomScale(p=0.5),
+        albumentations.RandomRotate90(),
+        # ToTensorV2()
+    ], additional_targets={'label': 'image'}
+)
+
+transformAugmentationImage = albumentations.Compose(
+    [
+        # ToTensor(),
+        albumentations.ToGray(p=0.3),
+        # albumentations.ToRGB(),  # Convert grayscale images to RGB
+        # ToTensorV2()
     ]
 )
 
@@ -81,6 +90,7 @@ def transforms(examples: dict) -> dict:
     for image, seg_mask in zip(examples[image_name], examples[lable_name]):
         image, seg_mask = np.array(image, np.float32), np.array(seg_mask, np.int64)
         image = ensure_rgb(image)
+
         image, seg_mask = ToTensor()(image), ToTensor()(seg_mask)
 
         transformed_images.append(image)

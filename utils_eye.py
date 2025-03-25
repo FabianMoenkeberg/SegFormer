@@ -4,7 +4,8 @@ import config as config
 #import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.typing import NDArray, Any
+from numpy.typing import NDArray
+from typing import Any
 import cv2
 #from tqdm import notebook, tnrange
 import glob
@@ -39,7 +40,7 @@ def import_data(sample_dir: str):
 def add_conversion_tp_bw_images(images: NDArray, labels: NDArray) -> tuple[NDArray, NDArray]:
     n = len(images)
     imagesBW = np.sum(images, axis=3)/3
-    imagesBW = np.stack((imagesBW,imagesBW,imagesBW),axis=-1)
+    imagesBW = np.repeat(imagesBW[..., np.newaxis], 3, axis=-1)
 
     images = np.append(images, imagesBW, axis=0)
     labels = np.append(labels, labels, axis=0)
@@ -85,9 +86,9 @@ def load_data(path_data: str = config.path_data, Y_split: float = 0.9)->tuple[ND
     np.savetxt('meanValueTrain.csv', meanTrain, delimiter=',')
 
     if config.load_additional_data:
-        X_train, Y_train = load_additional_data(X_train, Y_train, path_data=path_data)
+        X_train, Y_train = load_additional_data(X_train, Y_train, path_data=config.path_additional_data)
 
-    X_train, Y_train = add_conversion_tp_bw_images(X_train, Y_train)
+    # X_train, Y_train = add_conversion_tp_bw_images(X_train, Y_train)
     
     return X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test
 
@@ -98,16 +99,15 @@ def load_additional_data(X_train: NDArray, Y_train: NDArray, path_data: str = co
 
     print('Getting and resizing train images and masks ... ')
 
-    sample_dirs = glob.glob(os.path.join(config.pathNewTrainingsData,  'sample_*'))
+    sample_dirs = glob.glob(os.path.join(path_data,  'sample_*'))
 
-    config.N_samplesAdd = np.minimum(len(sample_dirs), config.N_samplesAdd)
-    train_ids = range(0,config.N_samplesAdd)
+    config.N_samples_add = np.minimum(len(sample_dirs), config.N_samples_add)
+    train_ids = range(0,config.N_samples_add)
 
-    id_map = np.zeros(config.N_samplesAdd, dtype=np.uint32)
+    id_map = np.zeros(config.N_samples_add, dtype=np.uint32)
+    X_train0 = np.zeros((config.N_samples_add, config.im_height, config.im_width, config.im_chan), dtype=np.uint8)
+    Y_train0 = np.zeros((config.N_samples_add, config.out_height, config.out_width), dtype=np.float32) 
 
-    X_train0 = np.zeros((config.N_samplesAdd, config.im_height, config.im_width, config.im_chan), dtype=np.uint8)
-
-    Y_train0 = np.zeros((config.N_samplesAdd, config.out_height, config.out_width, config.N_segClasses), dtype=np.bool) 
     n = 0
 
     for id_ in train_ids:
@@ -117,18 +117,18 @@ def load_additional_data(X_train: NDArray, Y_train: NDArray, path_data: str = co
         X_train0[n] = X
         Y_train0[n] = mask
 
-        id_map[n] = int(sample_dirs[id_].split('_')[1])
+        id_map[n] = int(sample_dirs[id_].split('_')[-1])
 
         n += 1
-        if n > config.N_samplesAdd:
+        if n > config.N_samples_add:
             break
     
     print('Finished')
 
-    config.N_samplesAdd = n
+    config.N_samples_add = n
 
-    X_train0 = X_train0[:config.N_samplesAdd]
-    Y_train0 = Y_train0[:config.N_samplesAdd]
+    X_train0 = X_train0[:config.N_samples_add]
+    Y_train0 = Y_train0[:config.N_samples_add]
 
     X_train= np.append(X_train, X_train0, axis=0)
     Y_train= np.append(Y_train, Y_train0, axis=0)
@@ -171,11 +171,16 @@ class EyeSegmentationDataset(Dataset):
         image = self.images[idx]
         segmentation_map = self.annotations[idx]
 
+        if self.transform_image:
+            image = self.transform_image(image=image)['image']
+
+        if self.shared_transform:
+            augmented = self.shared_transform(image=image, label=segmentation_map)
+            image = augmented['image']
+            segmentation_map = augmented['labels']
+
         # randomly crop + pad both image and segmentation map to same size
         encoded_inputs = self.image_processor(image, segmentation_map, return_tensors="pt")
-
-        if self.transform:
-            encoded_inputs = self.transform(encoded_inputs)
 
         for k,v in encoded_inputs.items():
             encoded_inputs[k].squeeze_() # remove batch dimension
@@ -184,7 +189,11 @@ class EyeSegmentationDataset(Dataset):
     
     def set_transform(self, transform: Any) -> None:
         """Update the dataset's transformation."""
-        self.transform = transform
+        self.shared_transform = transform
+
+    def set_transform_image(self, transform: Any) -> None:
+        """Update the dataset's transformation."""
+        self.transform_image = transform
 
 
 def ade_palette() -> list[list[int]]:

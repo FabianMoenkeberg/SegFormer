@@ -11,6 +11,7 @@ name_loadModel = 'model-galilei-seg.h5'
 
 path_data = '/data_eye/GalileiData/Fischer09062021'
 path_data = '/data_eye/eyeSegmentationFemto/applanated/segmented'
+path_additional_data = '/data_eye/eyeSegmentationFemto/segmentedTopviewLiquidClean'
 
 path_save_test = 'res_test'
 path_save_train = 'res_train'
@@ -23,6 +24,7 @@ path_test = 'test/'
 seed = 1
 
 N_samples = 500
+N_samples_add = 2000
 N_segClasses = 2 #for Galilei
 # N_segClasses = 150
 
