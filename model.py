@@ -190,9 +190,6 @@ class ModelNN:
         self.model.to(self.device)
         id_img = 0
 
-        color_seg = np.zeros((config.im_width, config.im_height, 3), dtype=np.uint8)
-        color_seg_ref = np.zeros((config.im_width, config.im_height, 3), dtype=np.uint8)
-
         with torch.no_grad():
             for batch_idx, vdata in enumerate(dataset):
                 inputs = vdata["pixel_values"].to(self.device)
@@ -200,21 +197,31 @@ class ModelNN:
                 outputs = self.inference(image_processor, inputs)
                 for i in range(inputs.size(0)):
                      # height, width, 3
-                    for label, color in enumerate(palette):
-                        color_seg[outputs[i] == label, :] = color
-                        color_seg_ref[labels[i] == label, :] = color
+                    color_seg = self.convert_colors(palette, outputs[i])
+                    color_seg_ref = self.convert_colors(palette, labels[i])
 
-                    # Convert to BGR
-                    color_seg = color_seg[..., ::-1]
-                    color_seg_ref = color_seg_ref[..., ::-1]
-                    image = np.transpose(inputs.cpu().numpy()[i], (1,2,0))
-                    image  = image*image_processor.image_std +image_processor.image_mean
+                    image = self.reverse_transform_images(inputs.cpu().numpy()[i], image_processor=image_processor)
                     cv2.imwrite(os.path.join(output_dir, f"results_{id_img}_det.png"), color_seg)
                     cv2.imwrite(os.path.join(output_dir, f"results_{id_img}.png"), image*255)
                     cv2.imwrite(os.path.join(output_dir, f"results_{id_img}_ref.png"), color_seg_ref)
                     id_img+=1
 
 
+    def reverse_transform_images(self, input: NDArray, image_processor: SegformerImageProcessor):
+        image = np.transpose(input, (1,2,0))
+        image  = image*image_processor.image_std +image_processor.image_mean
+        return image
+
+    def convert_colors(self, palette: list[list[int]], labels: NDArray) -> NDArray:
+        color_seg = np.zeros((config.im_width, config.im_height, 3), dtype=np.uint8)
+
+        for label, color in enumerate(palette):
+            color_seg[labels == label, :] = color
+
+        # Convert to BGR
+        color_seg = color_seg[..., ::-1]
+
+        return color_seg
 
     def inference(self, image_processor: SegformerImageProcessor, pixel_values: NDArray) -> NDArray:
         # forward pass
@@ -229,8 +236,8 @@ class ModelNN:
         return predicted_segmentation_map
 
     def inference_image(self, image_processor: SegformerImageProcessor, image: Image.Image) -> NDArray:
-        pixel_values = image_processor(image, return_tensors="pt").pixel_values.to(self.device)
-
+        pixel_values = image_processor(image, return_tensors="pt")["pixel_values"].to(self.device)
+        self.model.to(self.device)
         predicted_segmentation_map = self.inference(image_processor, pixel_values)[0]
         print(predicted_segmentation_map)
         return predicted_segmentation_map

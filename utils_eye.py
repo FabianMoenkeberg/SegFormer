@@ -20,21 +20,43 @@ from torch.utils.data import DataLoader
 from torch import Tensor
 from sklearn.model_selection import train_test_split
 
-def import_data(sample_dir: str):
+def import_data_image(sample_dir: str):
 
     # images
-    img = cv2.imread(sample_dir + '/image_resize.png')
-
+    img = cv2.imread(sample_dir)
     img = cv2.resize(img, (config.im_width, config.im_height), interpolation=cv2.INTER_AREA)
 
+    return img
+
+def read_mask(folder_path: str)->NDArray:
+    iris = cv2.imread(os.path.join(folder_path, 'iris.png'), cv2.IMREAD_GRAYSCALE)
+    pupil = cv2.imread(os.path.join(folder_path, 'pupil.png'), cv2.IMREAD_GRAYSCALE)
+
+    return (iris-pupil)//255*150 + (pupil//255)*29
+
+
+def import_data_mask(sample_dir: str):
+
     # masks
-    mask = cv2.imread(sample_dir + '/eye.png')
-    mask_a = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+    # mask = cv2.imread(sample_dir)
+    # mask_a = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+    mask_a = read_mask(sample_dir)
     lut = np.arange(256, dtype=np.uint8)*0
     lut[29] = 1
     lut[150] = 2
     mask_a = cv2.LUT(mask_a, lut)
-    return img, mask_a
+    return mask_a
+
+def import_data(sample_dir: str):
+
+    # images
+    img = import_data_image(sample_dir + '/image_resize.png')
+
+    # masks
+    
+    mask = import_data_mask(sample_dir)
+
+    return img, mask
 
 
 def add_conversion_tp_bw_images(images: NDArray, labels: NDArray) -> tuple[NDArray, NDArray]:
@@ -47,7 +69,29 @@ def add_conversion_tp_bw_images(images: NDArray, labels: NDArray) -> tuple[NDArr
     return images, labels
 
 
-def load_data(path_data: str = config.path_data, Y_split: float = 0.9)->tuple[NDArray, NDArray, NDArray, NDArray, list[int], list[int], NDArray, tuple[int, int]]:
+def load_data_inference(path_data: str = config.path_data)->tuple[NDArray, NDArray]:
+    print('Getting and resizing inference images and masks ... ')
+
+    sample_dirs = glob.glob(os.path.join(path_data,  '*.png'))
+    if config.reduced_full_dataset:
+        config.N_samples = np.minimum(len(sample_dirs), config.N_samples)
+    else:
+        config.N_samples = len(sample_dirs)
+    train_ids = range(0,config.N_samples)
+
+    id_map = np.zeros(config.N_samples, dtype=np.uint32)
+    X_train = np.zeros((config.N_samples, config.im_height, config.im_width, config.im_chan), dtype=np.float32)
+    
+    n = 0
+    for id_ in train_ids:
+        X_train[n] = import_data_image(sample_dirs[id_])
+        id_map[n] = id_
+        n+=1
+
+    return X_train, id_map
+
+
+def load_data(path_data: str = config.path_data, validation_split: float = config.validation_split)->tuple[NDArray, NDArray, NDArray, NDArray, list[int], list[int], NDArray, tuple[int, int]]:
     img = cv2.imread(path_data + '/sample_1/image_resize.png')[:,:,1]
     sizes_test = [img.shape[0], img.shape[1]]
 
@@ -80,7 +124,7 @@ def load_data(path_data: str = config.path_data, Y_split: float = 0.9)->tuple[ND
     X_train = X_train[:config.N_samples]
     Y_train = Y_train[:config.N_samples]
 
-    X_train, X_test, Y_train, Y_test, idx1, idx2 = train_test_split(X_train,Y_train, range(config.N_samples),test_size=config.validation_split, random_state=1337)
+    X_train, X_test, Y_train, Y_test, idx1, idx2 = train_test_split(X_train,Y_train, range(config.N_samples),test_size=validation_split, random_state=1337)
 
     meanTrain = np.mean(X_train, axis=(0,1,2))
     np.savetxt('meanValueTrain.csv', meanTrain, delimiter=',')
@@ -88,8 +132,9 @@ def load_data(path_data: str = config.path_data, Y_split: float = 0.9)->tuple[ND
     if config.load_additional_data:
         X_train, Y_train = load_additional_data(X_train, Y_train, path_data=config.path_additional_data)
 
-    # X_train, Y_train = add_conversion_tp_bw_images(X_train, Y_train)
-    
+    X_test = np.append(X_test, X_train[-10:-1], axis=0)
+    Y_test = np.append(Y_test, Y_train[-10:-1], axis=0)
+
     return X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test
 
 
@@ -153,7 +198,7 @@ class EyeSegmentationDataset(Dataset):
         self.images = X
         self.images /= 255.0
         self.annotations = Y
-
+        
         assert len(self.images) == len(self.annotations), "There must be as many images as there are segmentation maps"
 
     def __len__(self):

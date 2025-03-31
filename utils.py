@@ -1,5 +1,5 @@
 import config as config
-from utils_eye import EyeSegmentationDataset, load_data
+from utils_eye import EyeSegmentationDataset, load_data, load_data_inference
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -105,10 +105,9 @@ def transforms(examples: dict) -> dict:
         del examples["annotation"]
     return examples
 
+def import_data(root_dir: str =config.path_data, load_entire_dataset: bool = config.load_entire_dataset, validation_split: float = config.validation_split) -> dict:
 
-def import_data(root_dir: str ='/app/ADE20k_toy_dataset') -> dict:
-
-    if config.load_entire_dataset:#False:#
+    if load_entire_dataset:
 
         image_processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b2-finetuned-ade-512-512")
         image_processor.do_reduce_labels = False
@@ -117,7 +116,7 @@ def import_data(root_dir: str ='/app/ADE20k_toy_dataset') -> dict:
         image_processor.size['width']=config.im_width
 
         # read images
-        X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test = load_data(path_data=config.path_data)
+        X_train, X_test, Y_train, Y_test, idx1, idx2, id_map, sizes_test = load_data(path_data=root_dir, validation_split=validation_split)
 
         train_dataset = EyeSegmentationDataset(X_train, Y_train, idx1, image_processor=image_processor, train=True)
         valid_dataset = EyeSegmentationDataset(X_test, Y_test, idx2, image_processor=image_processor, train=False)
