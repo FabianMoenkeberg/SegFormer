@@ -1,5 +1,5 @@
 import config
-from transformers import SegformerForSemanticSegmentation, SegformerFeatureExtractor
+from transformers import SegformerForSemanticSegmentation, AutoImageProcessor, Mask2FormerConfig, Mask2FormerForUniversalSegmentation
 import json
 from huggingface_hub import hf_hub_download
 import evaluate
@@ -23,11 +23,15 @@ class ModelNN:
         self.repo_id = "huggingface/label-files"
         self.filename = "ade20k-id2label.json"
         # self.modelname = "nvidia/mit-b0"
-        self.modelname = "nvidia/segformer-b0-finetuned-ade-512-512"
+        self.modelname = "nvidia/segformer-b2-finetuned-ade-512-512"
 
         self.device = None
         self.useLora = True
         self.metric = evaluate.load("mean_iou")
+
+        self.image_name = "pixel_values"
+        self.label_name = "labels"
+        self.label_class = None
 
         if config.GPU_USAGE:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,22 +43,36 @@ class ModelNN:
 
     def load_model(self) -> None:
         # load id2label mapping from a JSON on the hub
-        # self.id2label = json.load(open(hf_hub_download(repo_id=self.repo_id, filename=self.filename, repo_type="dataset"), "r"))
+        os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         self.id2label = self.get_femto_id_to_label()
 
         self.id2label = {int(k): v for k, v in self.id2label.items()}
         label2id = {v: k for k, v in self.id2label.items()}
 
         # define model
-        if config.load_local_model:
-            model = SegformerForSemanticSegmentation.from_pretrained(config.name_loadModel)
-        else:
-            model = SegformerForSemanticSegmentation.from_pretrained(self.modelname,
-                                                                    num_labels=config.N_segClasses+1,
-                                                                    id2label=self.id2label,
-                                                                    label2id=label2id,
-                                                                    ignore_mismatched_sizes = True
+        if config.model_type == 'SegFormer':
+            if config.load_local_model:
+                model = SegformerForSemanticSegmentation.from_pretrained(config.name_loadModel)
+            else:
+                model = SegformerForSemanticSegmentation.from_pretrained(self.modelname,
+                                                                        num_labels=config.N_segClasses+1,
+                                                                        id2label=self.id2label,
+                                                                        label2id=label2id,
+                                                                        ignore_mismatched_sizes = True
         )
+        elif config.model_type == 'Mask2Former':
+            self.label_name = "mask_labels"
+            self.label_class = 'class_labels'
+            model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-tiny-coco-instance",
+                                                     num_labels=config.N_segClasses+1,
+                                                                        id2label=self.id2label,
+                                                                        label2id=label2id,
+                                                                        ignore_mismatched_sizes = True
+                                                                        )
+            # model.config.num_labels = 3  # 3 classes: background, class 1, and class 2
+            # model.config.id2label = self.id2label
+            # model.config.label2id = label2id
+            # model.classifier = torch.nn.Conv2d(model.config.hidden_size, 3, kernel_size=(1, 1))
 
         self.model = model
 
@@ -117,26 +135,30 @@ class ModelNN:
             for idx, batch in enumerate(tqdm(train_dataloader)):
                 self.model.train()
                 # get the inputs;
-                pixel_values = batch["pixel_values"].to(self.device)
-                labels = batch["labels"].to(self.device)
+                pixel_values = batch[self.image_name].to(self.device)
+                labels = batch[self.label_name].to(self.device)
+                if self.label_class:
+                    classes = batch[self.label_class].to(self.device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
                 # forward + backward + optimize
-                outputs = self.model(pixel_values=pixel_values, labels=labels)
-                loss, logits = outputs.loss, outputs.logits
+                if self.label_class:
+                    outputs = self.model(pixel_values=pixel_values, mask_labels=labels, class_labels=classes)
+                else:
+                    outputs = self.model(pixel_values=pixel_values, mask_labels=labels)
+
+                loss = outputs.loss
                 loss.backward()
                 optimizer.step()
 
                 # evaluate
                 with torch.no_grad():
-                    upsampled_logits = nn.functional.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
-
-                    predicted = upsampled_logits.argmax(dim=1)
+                    predicted = self.get_prediction(labels, outputs, image_processor)
 
                     # note that the metric expects predictions + labels as numpy arrays
-                    self.metric.add_batch(predictions=predicted.detach().cpu().numpy(), references=labels.detach().cpu().numpy())
+                    self.metric.add_batch(predictions=predicted, references=labels.detach().cpu().numpy())
 
                 # let's print loss and metrics every 100 batches
                 if idx % 100 == 0:
@@ -166,6 +188,18 @@ class ModelNN:
 
             print(f'Epoch {epoch} \t\t Training Loss: {running_tloss} \t\t Validation Loss: {running_vloss}')
 
+    def get_prediction(self, labels, outputs, image_processor: SegformerImageProcessor):
+        if config.model_type == 'SegFormer':
+            logits = outputs.logits
+            upsampled_logits = nn.functional.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
+
+            predicted = upsampled_logits.argmax(dim=1).detach().cpu().numpy()
+        elif config.model_type == 'Mask2Former':
+            shapes = [(labels.shape[-2],labels.shape[-1]) for _ in range(labels.shape[0])]
+            predicted = image_processor.post_process_semantic_segmentation(outputs, shapes)
+            predicted = np.array([el.detach().cpu().numpy() for el in predicted])
+        return predicted
+
     def validate(self, valid_dataloader):
         running_vloss = 0.0
         # Set the model to evaluation mode, disabling dropout and using population
@@ -175,9 +209,14 @@ class ModelNN:
         # Disable gradient computation and reduce memory consumption.
         with torch.no_grad():
             for i, vdata in enumerate(valid_dataloader):
-                pixel_values = vdata["pixel_values"].to(self.device)
-                labels = vdata["labels"].to(self.device)
-                voutputs = self.model(pixel_values=pixel_values, labels=labels)
+                pixel_values = vdata[self.image_name].to(self.device)
+                labels = vdata[self.label_name].to(self.device)
+                if self.label_class:
+                    classes = vdata[self.label_class].to(self.device)
+                    voutputs = self.model(pixel_values=pixel_values, labels=labels, class_labels=classes)
+                else:
+                    voutputs = self.model(pixel_values=pixel_values, labels=labels)
+
 
                 vloss = voutputs.loss.detach().cpu()
                 running_vloss += vloss*pixel_values.size(0)
@@ -198,8 +237,8 @@ class ModelNN:
 
         with torch.no_grad():
             for batch_idx, vdata in enumerate(dataset):
-                inputs = vdata["pixel_values"].to(self.device)
-                labels = vdata["labels"]
+                inputs = vdata[self.image_name].to(self.device)
+                labels = vdata[self.label_name]
                 outputs = self.inference(image_processor, inputs)
                 for i in range(inputs.size(0)):
                      # height, width, 3
@@ -242,13 +281,13 @@ class ModelNN:
         return predicted_segmentation_map
 
     def inference_image(self, image_processor: SegformerImageProcessor, image: Image.Image) -> NDArray:
-        pixel_values = image_processor(image, return_tensors="pt")["pixel_values"].to(self.device)
+        pixel_values = image_processor(image, return_tensors="pt")[self.image_name].to(self.device)
         self.model.to(self.device)
         predicted_segmentation_map = self.inference(image_processor, pixel_values)[0]
         print(predicted_segmentation_map)
         return predicted_segmentation_map
     
-    def save(self, name: str = "segformer_model") -> None:
+    def save(self, name: str = config.model_type) -> None:
         self.model.save_pretrained(name + "_lora_adapter")
         if self.useLora:
             merged_model = self.model.merge_and_unload()

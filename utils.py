@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 import torch
 import os
 from PIL import Image
-from transformers import SegformerImageProcessor, SegformerFeatureExtractor
+from transformers import SegformerImageProcessor, AutoImageProcessor
 
 from torch.utils.data import DataLoader
 from torch import Tensor
@@ -109,7 +109,12 @@ def import_data(root_dir: str =config.path_data, load_entire_dataset: bool = con
 
     if load_entire_dataset:
 
-        image_processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b2-finetuned-ade-512-512")
+        if config.model_type == "SegFormer":
+            image_processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b2-finetuned-ade-512-512")
+        elif config.model_type == "Mask2Former":
+            image_processor = AutoImageProcessor.from_pretrained("facebook/mask2former-swin-small-coco-instance", use_fast=True)
+        else:
+            image_processor = SegformerImageProcessor.from_pretrained("nvidia/segformer-b2-finetuned-ade-512-512")
         image_processor.do_reduce_labels = False
         image_processor.do_rescale = False
         image_processor.size['height']=config.im_height

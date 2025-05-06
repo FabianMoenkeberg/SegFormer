@@ -221,7 +221,10 @@ class EyeSegmentationDataset(Dataset):
         encoded_inputs = self.image_processor(image, segmentation_map, return_tensors="pt")
 
         for k,v in encoded_inputs.items():
-            encoded_inputs[k].squeeze_() # remove batch dimension
+            if isinstance(encoded_inputs[k],list):
+                encoded_inputs[k] = encoded_inputs[k][0].squeeze_()
+            else:
+                encoded_inputs[k].squeeze_()
             
         return encoded_inputs
     
