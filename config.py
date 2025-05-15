@@ -1,13 +1,13 @@
 GPU_USAGE = True
 load_local_model = True
-train_model = True
+train_model = False
 load_entire_dataset = True
 reduced_full_dataset = False
 load_additional_data = True
 
 name = 'galilei'
 
-name_loadModel = 'model-galilei-seg.h5'
+name_loadModel = 'segformer_modelfull_finetuned_b0'
 
 path_data = '/data_eye/GalileiData/Fischer09062021'
 path_data = '/data_eye/eyeSegmentationFemto/applanated/segmented'
@@ -35,7 +35,7 @@ im_chan = 3
 out_width = im_width//2
 out_height = im_height//2
 
-nEpochs = 5
+nEpochs = 30
 validation_split = 0.1
 batch_size = 30
 

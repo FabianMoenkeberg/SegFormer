@@ -3,12 +3,9 @@ import utils as utils
 import utils_eye
 import model as modelDef
 
-#import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-from accelerate.utils import write_basic_config
-from utils_eye import load_data
 
 
 np.random.seed(config.seed)
@@ -24,6 +21,10 @@ model.setup_lora()
 if config.train_model:
     model.train(image_processor, train_dataloader, valid_dataloader=valid_dataloader)
     model.save()
+else:
+    model.model.to(model.device)
+    val_loss = model.validate(valid_dataloader)
+    print(f'Validation Loss: {val_loss}')
 
 
 # Test on some images

@@ -23,7 +23,7 @@ class ModelNN:
         self.repo_id = "huggingface/label-files"
         self.filename = "ade20k-id2label.json"
         # self.modelname = "nvidia/mit-b0"
-        self.modelname = "nvidia/segformer-b2-finetuned-ade-512-512"
+        self.modelname = "nvidia/segformer-b0-finetuned-ade-512-512"
 
         self.device = None
         self.useLora = True
@@ -47,7 +47,7 @@ class ModelNN:
 
         # define model
         if config.load_local_model:
-            model = SegformerForSemanticSegmentation.from_pretrained('segformer_modelfull_finetuned')
+            model = SegformerForSemanticSegmentation.from_pretrained(config.name_loadModel)
         else:
             model = SegformerForSemanticSegmentation.from_pretrained(self.modelname,
                                                                     num_labels=config.N_segClasses+1,
@@ -160,25 +160,31 @@ class ModelNN:
             running_tloss /= len(train_dataloader)*config.batch_size
             
             if valid_dataloader:
-                running_vloss = 0.0
-                # Set the model to evaluation mode, disabling dropout and using population
-                # statistics for batch normalization.
-                self.model.eval()
-
-                # Disable gradient computation and reduce memory consumption.
-                with torch.no_grad():
-                    for i, vdata in enumerate(valid_dataloader):
-                        pixel_values = vdata["pixel_values"].to(self.device)
-                        labels = vdata["labels"].to(self.device)
-                        voutputs = self.model(pixel_values=pixel_values, labels=labels)
-
-                        vloss = voutputs.loss.detach().cpu()
-                        running_vloss += vloss*pixel_values.size(0)
-
-            running_vloss /= len(valid_dataloader)*config.batch_size
-            scheduler.step(running_vloss)
+                running_vloss = self.validate(valid_dataloader)
+            
+                scheduler.step(running_vloss)
 
             print(f'Epoch {epoch} \t\t Training Loss: {running_tloss} \t\t Validation Loss: {running_vloss}')
+
+    def validate(self, valid_dataloader):
+        running_vloss = 0.0
+        # Set the model to evaluation mode, disabling dropout and using population
+        # statistics for batch normalization.
+        self.model.eval()
+
+        # Disable gradient computation and reduce memory consumption.
+        with torch.no_grad():
+            for i, vdata in enumerate(valid_dataloader):
+                pixel_values = vdata["pixel_values"].to(self.device)
+                labels = vdata["labels"].to(self.device)
+                voutputs = self.model(pixel_values=pixel_values, labels=labels)
+
+                vloss = voutputs.loss.detach().cpu()
+                running_vloss += vloss*pixel_values.size(0)
+        
+        running_vloss /= len(valid_dataloader)*config.batch_size
+
+        return running_vloss
 
     def inference_dataset(self, image_processor: SegformerImageProcessor, dataset: DataLoader, output_dir: str, palette: list[list[int]])->None:
         
