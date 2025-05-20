@@ -1,14 +1,14 @@
 GPU_USAGE = True
 load_local_model = True
-train_model = True
+train_model = False
 load_entire_dataset = True
 reduced_full_dataset = False
 load_additional_data = True
 
 name = 'galilei'
 
-name_loadModel = 'segformer_modelfull_finetuned_b0'
-model_type = 'SegFormer'#'Mask2Former'#
+name_loadModel = 'Mask2Formerfull_finetuned'
+model_type = 'Mask2Former'#'SegFormer'#
 
 path_data = '/data_eye/GalileiData/Fischer09062021'
 path_data = '/data_eye/eyeSegmentationFemto/applanated/segmented'
