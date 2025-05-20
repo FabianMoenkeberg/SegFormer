@@ -1,3 +1,4 @@
+import transformers
 import config
 from transformers import SegformerForSemanticSegmentation, AutoImageProcessor, Mask2FormerConfig, Mask2FormerForUniversalSegmentation
 import json
@@ -116,7 +117,7 @@ class ModelNN:
 
         # define optimizer
         optimizer = optim.AdamW(self.model.parameters(), lr=config.lr)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=1, verbose=True)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
         loss_fn = nn.CrossEntropyLoss(ignore_index=255)
 
         # move model to GPU
@@ -134,20 +135,11 @@ class ModelNN:
             n = 0
             for idx, batch in enumerate(tqdm(train_dataloader)):
                 self.model.train()
-                # get the inputs;
-                pixel_values = batch[self.image_name].to(self.device)
-                labels = batch[self.label_name].to(self.device)
-                if self.label_class:
-                    classes = batch[self.label_class].to(self.device)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
-                # forward + backward + optimize
-                if self.label_class:
-                    outputs = self.model(pixel_values=pixel_values, mask_labels=labels, class_labels=classes)
-                else:
-                    outputs = self.model(pixel_values=pixel_values, mask_labels=labels)
+                outputs, pixel_values, labels = self.evaluate_batch(batch)
 
                 loss = outputs.loss
                 loss.backward()
@@ -155,18 +147,21 @@ class ModelNN:
 
                 # evaluate
                 with torch.no_grad():
-                    predicted = self.get_prediction(labels, outputs, image_processor)
+                    predicted, labels = self.get_prediction(labels, outputs, image_processor)
 
+                    # labels = labels.detach().cpu().numpy()
+                    labels.astype(np.int32) 
+                    predicted = predicted.astype(np.int32)
                     # note that the metric expects predictions + labels as numpy arrays
-                    self.metric.add_batch(predictions=predicted, references=labels.detach().cpu().numpy())
+                    self.metric.add_batch(predictions=predicted, references=labels)
 
                 # let's print loss and metrics every 100 batches
                 if idx % 100 == 0:
                     # currently using _compute instead of compute
                     # see this issue for more info: https://github.com/huggingface/evaluate/pull/328#issuecomment-1286866576
                     metrics = self.metric._compute(
-                            predictions=predicted.detach().cpu(),
-                            references=labels.detach().cpu(),
+                            predictions=predicted,
+                            references=labels,
                             num_labels=len(self.id2label),
                             ignore_index=255,
                             reduce_labels=False, # we've already reduced the labels ourselves
@@ -188,17 +183,34 @@ class ModelNN:
 
             print(f'Epoch {epoch} \t\t Training Loss: {running_tloss} \t\t Validation Loss: {running_vloss}')
 
+    def evaluate_batch(self, batch: transformers.image_processing_base.BatchFeature) -> tuple:
+        # move model to GPU
+        # get the inputs;
+        pixel_values = batch[self.image_name].to(self.device)
+        labels = batch[self.label_name].to(self.device)
+
+        # forward + backward + optimize
+        if self.label_class:
+            classes = batch[self.label_class].to(self.device)
+            outputs = self.model(pixel_values=pixel_values, mask_labels=labels, class_labels=classes)
+        else:
+            outputs = self.model(pixel_values=pixel_values, labels=labels)
+
+        return outputs, pixel_values, labels
+
     def get_prediction(self, labels, outputs, image_processor: SegformerImageProcessor):
         if config.model_type == 'SegFormer':
             logits = outputs.logits
             upsampled_logits = nn.functional.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
 
             predicted = upsampled_logits.argmax(dim=1).detach().cpu().numpy()
+            labels = labels.detach().cpu().numpy()
         elif config.model_type == 'Mask2Former':
             shapes = [(labels.shape[-2],labels.shape[-1]) for _ in range(labels.shape[0])]
             predicted = image_processor.post_process_semantic_segmentation(outputs, shapes)
             predicted = np.array([el.detach().cpu().numpy() for el in predicted])
-        return predicted
+            labels = labels.argmax(dim=1).detach().cpu().numpy()
+        return predicted, labels
 
     def validate(self, valid_dataloader):
         running_vloss = 0.0
@@ -209,15 +221,8 @@ class ModelNN:
         # Disable gradient computation and reduce memory consumption.
         with torch.no_grad():
             for i, vdata in enumerate(valid_dataloader):
-                pixel_values = vdata[self.image_name].to(self.device)
-                labels = vdata[self.label_name].to(self.device)
-                if self.label_class:
-                    classes = vdata[self.label_class].to(self.device)
-                    voutputs = self.model(pixel_values=pixel_values, labels=labels, class_labels=classes)
-                else:
-                    voutputs = self.model(pixel_values=pixel_values, labels=labels)
-
-
+                voutputs, pixel_values, labels = self.evaluate_batch(vdata)
+                
                 vloss = voutputs.loss.detach().cpu()
                 running_vloss += vloss*pixel_values.size(0)
         

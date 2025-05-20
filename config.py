@@ -8,7 +8,7 @@ load_additional_data = True
 name = 'galilei'
 
 name_loadModel = 'segformer_modelfull_finetuned_b0'
-model_type = 'Mask2Former'
+model_type = 'SegFormer'#'Mask2Former'#
 
 path_data = '/data_eye/GalileiData/Fischer09062021'
 path_data = '/data_eye/eyeSegmentationFemto/applanated/segmented'
@@ -36,7 +36,7 @@ im_chan = 3
 out_width = im_width//2
 out_height = im_height//2
 
-nEpochs = 5
+nEpochs = 3
 validation_split = 0.1
 batch_size = 16
 
